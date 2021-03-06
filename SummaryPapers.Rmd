@@ -1,0 +1,108 @@
+---
+title: "Summary of Papers"
+author: "Edmond Géraud Aguilar"
+date: '`r format(Sys.Date(),"%e de %B, %Y")`'
+output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
+    highlight: zenburn
+    number_sections: true
+    df_print: kable
+    extra_dependencies: ["float"]
+  html_document:
+    toc: true
+    toc_float: true
+    theme: united
+    number_sections: true
+    df_print: kable
+    highlight: zenburn
+bibliography: scholar.bib
+link-citations: true
+linkcolor: blue
+knit: (function(inputFile,encoding="UTF-8") {
+    rmarkdown::render(input=inputFile,output_format=c("pdf_document",
+     "html_document"),output_file = c(paste0(tools::file_path_sans_ext(inputFile),".pdf"),
+     paste0(tools::file_path_sans_ext(inputFile),".html")),encoding = encoding)
+  })
+---
+
+
+
+```{r setup, include=FALSE}
+# knitr options
+knitr::opts_chunk$set(comment = NA, prompt = TRUE, tidy.opts=list(width.cutoff=60),tidy=TRUE, 
+               fig.width = 7, fig.height = 7,echo = TRUE, 
+               message = FALSE, warning = FALSE, cache=FALSE,fig.pos = "!H", out.extra = "")
+```
+
+
+
+
+```{r libraries, include=FALSE}
+# Install packages
+# Load packages
+# ...
+library(kableExtra)
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Harmonization of quality metrics and power calculation in multi-omic studies
+
+
+Multi-omic studies combine measurements at different molecular levels to build comprehensive models of cellular systems.  The field lacks a comparative description of performance parameters across omic technologies and a formulation
+for experimental design in multi-omic data scenarios. 
+
+On this article they present Figures of Merit as quality descriptors applicable to different omic data types.
+
+The so-called multi-platform or multi-omics studies are becoming popular
+
+### Key words def:
+
+*  **Definition of figure of merit**
+
+"A FoM I s a quantity used to characterize the performance of a device, system or method, relative to its alternatives. In engineering, figures of merit are often defined for particular materials or devices in order to determine their relative utility for an application. In commerce, such figures are often used as a marketing tool to convince consumers to choose a particular brand. In analytical calibration, they are employed to compare the relative performances of different analytical methodologies, and also to establish detection capabilities, a feature which is specific for analytical chemistry" [@olivieri2014practical]
+
+* **Multiomics**
+Multi-omics, integrative omics, "panomics" or 'pan-omics' is a biological analysis approach in which the data sets are multiple "omes", such as the genome, proteome, transcriptome, epigenome, metabolome, and microbiome
+
+* **Shotgun proteomics**
+
+Proteomics at HPLC-MS
+
+* **Sample Class Predictors**
+
+Algorithm of ML
+
+* **Seq-based methods**
+
+  + **RNA-seq**
+    (wikipedia)
+    RNA-Seq (named as an abbreviation of "RNA sequencing") is a sequencing technique which uses next-generation sequencing (NGS) to reveal the presence and quantity of RNA in a biological sample at a given moment, analyzing the continuously changing cellular transcriptome.[2][3] 
+    Specifically, RNA-Seq facilitates the ability to look at alternative gene spliced transcripts, post-transcriptional modifications, gene fusion, mutations/SNPs and changes in gene expression over time, or differences in gene expression in different groups or treatments.[4] 
+
+  + **miRNA-seq**
+  MicroRNA sequencing (miRNA-seq), a type of RNA-Seq, is the use of next-generation sequencing or massively parallel high-throughput DNA sequencing to sequence microRNAs, also called miRNAs. miRNA-seq differs from other forms of RNA-seq in that input material is often enriched for small RNAs. miRNA-seq allows researchers to examine tissue-specific expression patterns, disease associations, and isoforms of miRNAs, and to discover previously uncharacterized miRNAs
+
+  + **ChIP-seq**
+  ChIP-sequencing, also known as ChIP-seq, is a method used to analyze protein interactions with DNA. ChIP-seq combines chromatin immunoprecipitation (ChIP) with massively parallel DNA sequencing to identify the binding sites of DNA-associated proteins. It can be used to map global binding sites precisely for any protein of interest
+  
+  + **Methyl-seq**
+  
+  (roche y wikipedia)
+  DNA methylation is an important epigenetic modification influencing several critical developmental processes. Aberrations in this process, such as hypo or hypermethylation of cytosine-guanine (CpG) dinucleotides, could lead to genomic instability or transcriptional silencing, leading to the development of various diseases, including cancer, diabetes, cardiovascular and inflammatory diseases or mental disorders. Determining the exact DNA methylation status is therefore critical. Methylation sequencing (Methyl-seq or bisulfite sequencing) is a powerful tool for understanding genome-wide methylation with single nucleotide resolution and is considered a gold standard.
+  
+  
+  Bisulfite[1] sequencing (also known as bisulphite sequencing) is the use of bisulfite treatment of DNA before routine sequencing to determine the pattern of methylation In animals it predominantly involves the addition of a methyl group to the carbon-5 position of cytosine residues of the dinucleotide CpG, and is implicated in repression of transcriptional activity.
+  
+  + **ATAC-seq**
+  (wikpedia)
+  ATAC-seq (Assay for Transposase-Accessible Chromatin using sequencing) is a technique used in molecular biology to assess genome-wide chromatin accessibility.
+  
+  
+  
+# References

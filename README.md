@@ -18,7 +18,22 @@ Understand the workflow of STATegRa.
 
 * From <https://www.nature.com/articles/s41588-020-0696-0#data-availability> I take 2 data-sets. RNA-seq and CHIP-seq
 
+* Perform metadata analysys
+
 * Implement an exploratory analysis on the 2 data-sets.
 
 * Implement STATegRa on both data-sets.
+
+#  Goals reached so far.
+
+* Metadata analysis
+* Already found tutorials for exploratory analysis on RNA-seq and CHIP-seq
+
+<https://bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/inst/doc/rnaseqGene.html#preparing-quantification-input-to-deseq2>
+
+<
+# Next meeting. 
+
+* RNA-seq and Chip-seq exploratory analysis
+
 

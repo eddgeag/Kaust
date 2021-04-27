@@ -1,0 +1,17 @@
+base
+BiocGenerics
+Biobase
+GEOquery
+ggplot2
+GGally
+chisq.posthoc.test
+limma
+S4Vectors
+IRanges
+GenomeInfoDb
+GenomicRanges
+matrixStats
+MatrixGenerics
+SummarizedExperiment
+DESeq2
+Rsubread

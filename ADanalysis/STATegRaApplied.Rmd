@@ -20,7 +20,7 @@ editor_options:
 # knitr options
 knitr::opts_chunk$set(comment = NA, prompt = TRUE, tidy.opts=list(width.cutoff=60),tidy=TRUE, 
                fig.width = 7, fig.height = 7,echo = TRUE, 
-               message = FALSE, warning = FALSE, cache=T,fig.pos = "!H", out.extra = "")
+               message = T, warning =T, cache=T,fig.pos = "!H", out.extra = "")
 ```
 
 ```{r librerias}
@@ -82,7 +82,7 @@ for(j in 1:ncol(metadata)){
 ```
 
 Let's se how the data is finally
-```{r preparandoMetadata}
+```{r preparandoMetadata2}
 metadata.copy<-metadata[,-1]# let's remove the index
 metadata.copy$Group2<-as.factor(ifelse(metadata$Group!="AD","control","AD"))
 str(metadata.copy)
@@ -115,7 +115,7 @@ for ( i in 1:dim(metadata.copy)[2]) {
       boxplot(metadata.copy[,i],main=colnames(metadata.copy)[i])
       points(mean(metadata.copy[,i]),col="blue")
       hist(metadata.copy[,i],main=colnames(metadata.copy[,i]),freq = F,xlab=colnames(metadata.copy[,i]))
-      lines(density(metadata.copy[,i]),color="blue")
+      lines(density(metadata.copy[,i]),col="blue")
     
     }
 }
@@ -199,7 +199,7 @@ summary(with(metadata.copy,aov(RIN_RNA~Group)))
 pairwise.t.test(metadata.copy$RIN_RNA,metadata.copy$Group,method="bonferroni")
 ```
 The integrity numbers of RNA shows a statsitical evidence between AD and Young subjects. But there is no difference between old and young controls. 
-```{r}
+```{r statisticalAnalysisMetadata}
 summary(with(metadata.copy,aov(neuron~Group)))
 pairwise.t.test(metadata.copy$neuron,metadata.copy$Group,method="bonferroni")
 ```
@@ -231,7 +231,7 @@ First let's investigate which T and A refer, and how they possible lines to meta
 
 ```{r targetsFile}
 title<-gse.GSE153873$GSE153873_series_matrix.txt.gz$title
-title.temp<-matrix(strsplit2(temp,"-"),ncol=3)
+title.temp<-matrix(strsplit2(title,"-"),ncol=3)
 title.temp.df<-as.data.frame(title.temp)
 colnames(title.temp.df)<-c("ID","dontknow","Group")
 
@@ -246,15 +246,22 @@ title.temp.df.ordered$dontknowLetter[-w]<-"T"
 targets.temp<-cbind(title.temp.df.ordered,metadata.copy)
 ```
 
-```{r investigando}
-boxplot(targets[,c(4,8,9,12)])
-```
 
 ```{r investigando2}
 targets.temp2<-targets.temp[,-c(3)]
-rownames(targets.temp2)<-targets$shortname
+rownames(targets.temp2)<-targets.temp2$shortname
 targets<-targets.temp2[,-3]
+for ( i in 1:ncol(targets)){
+  
+  if(class(targets[,i])=="character")
+    targets[,i]<-as.factor(targets[,i])
+  
+  
+}
+
+boxplot(targets[,c(3,7,8,11,12)])
 boxplot(targets$dontknowID~targets$dontknowLetter)
+hist(targets$dontknowID)
 wilcox.test(targets$dontknowID~targets$dontknowLetter)
 wilcox.test(targets$dontknowID,targets$PMI)
 wilcox.test(targets$dontknowID,targets$AgeDeath)
@@ -262,7 +269,11 @@ ftable(table(targets$Group,targets$dontknowLetter,targets$Gender,targets$Braak,t
 ```
 A represents females subjects, each of one for each group. From AD female, we have a Cerad socre and Braak stage V/VI. From Old female subject, we have a no Cerad score and I/II Braak stage. Young female has no Braak stages neither Cerad score. 
 
+
+
 Afterwards, we are going to construct a `summarizedExperiment` an object from DESeq. First of all we are going to reorder the samples.
+
+
 
 ```{r reordering}
 write.csv(targets,file="./results/targets.csv",sep=",")
@@ -286,8 +297,66 @@ counts.order<-counts[,order(col.namez.df$ID)]
 colnames(counts.order)<-col.namez.df$shortName.ordered
 head(counts.order)
 ```
+# Further anslysis
+
+
+
+```{r investigandoMisterioso}
+par(mfrow=c(2,2))
+for ( i in 1:dim(targets)[2]) {
+  if (class(targets[,i])=="factor"){
+    if(colnames(targets)[i]!="dontknow"){
+      boxplot(targets$dontknowID~targets[,i],main=colnames(targets)[i],
+              ylab = "Dontknow ID",xlab = "")
+      # means<-tapply(targets[,i], targets[,i], mean)
+      # points(means,col="blue")
+    
+    }
+}}
+
+
+```
+```{r}
+wilcox.test(targets$dontknowID~targets$dontknowLetter)
+```
+```{r}
+kruskal.test(targets$dontknowID~targets$Group)
+```
+```{r}
+wilcox.test(targets$dontknowID~targets$Gender)
+```
+```{r}
+wilcox.test(targets$dontknowID~targets$Cerad)
+```
 
 ```{r}
+kruskal.test(targets$dontknowID~targets$Braak)
+```
+
+
+```{r investigandoMAsvariableMisteriosaN}
+
+x<-targets[,c(4,5,6,9,10,13,14)]
+y<-apply(x, 2, function(column) table(metadata.copy$Group,column))
+par(mfrow=c(2,2))
+for( i in 1:length(y)){
+  y.t<-y[[i]]
+  barplot(y.t,xlim=c(0,ncol(y.t)+3),
+          col=1:3,
+          ylab="DontKnowLeter",
+          legend.text=T,
+          args.legend=list(
+            x=ncol(y.t)+3,
+            y=max(colSums(y.t)),
+            bty="n"
+          ))
+  
+  
+}
+```
+
+
+```{r constructObject}
 dds<-DESeqDataSetFromMatrix(countData = counts.order,colData=targets,design=~dontknowID+dontknowLetter+Group+Gender+PMI+RIN_RNA+neuron)
 
 ```
@@ -324,7 +393,10 @@ head(assay(vsd),3)
   colData(vsd)
 ```
 ```{r rld}
-rld<-rlog(dds.filt2,blind=F)
-head(assay(rld),3)
+# rld<-rlog(dds.filt2,blind=F)
+# head(assay(rld),3)
+```
+```{r}
+
 ```
 

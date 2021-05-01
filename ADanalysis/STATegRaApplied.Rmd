@@ -26,16 +26,17 @@ knitr::opts_chunk$set(comment = NA, prompt = TRUE, tidy.opts=list(width.cutoff=6
 ```{r librerias}
 library(GEOquery)
 library(ggplot2)
-library(GGally)
-library(chisq.posthoc.test)
 library(limma)
 library(DESeq2)
 library(Rsubread)
+library(data.table)
+library(edgeR)
+library(ggrepel)
+library(sva)
 ```
 
 # Description of original publication of data-set to be applied
 
-## RNA-seq
 
 ## Setup environment
 
@@ -58,9 +59,9 @@ kableExtra::kable(metadata)
 
 ```
 
-### Descriptive analysis for each feature. 
+### Descriptive analysis  
 
-We have gender, age ath death, post mortem hours, Braak and Cerad soroes, integrity numbers for RNA, and percentage of neurons (they don't specify what it is)
+We have gender, age at death, post mortem hours, Braak and Cerad soroes, integrity numbers for RNA, and percentage of neurons (they don't specify what it is)
 
 Let's see first classify cause of death by complications of AD and others, and also, convert into factors, group, gender, Cerad, Braak into factors.
 
@@ -84,46 +85,127 @@ for(j in 1:ncol(metadata)){
 Let's se how the data is finally
 ```{r preparandoMetadata2}
 metadata.copy<-metadata[,-1]# let's remove the index
-metadata.copy$Group2<-as.factor(ifelse(metadata$Group!="AD","control","AD"))
 str(metadata.copy)
 ```
-#### Descriptve numerical statistics 
 
-First of all let's observe the min, max, the quartiles, and the mean, for numerical variables, and the categorical variables, his levels.
+
+First of all let's observe the min, max, the quartiles, and the mean, for numerical variables, and the categorical variables, his levels for each group.
 
 ```{r}
-kableExtra::kable(summary(metadata.copy))
+sumarizacion<-function(datos,grupo){
+  
+  datos.grupo<-datos[datos$Group==grupo,]
+  datos.grupo$Group<-droplevels(datos.grupo$Group)
+  s<-summary(datos.grupo)
+  s[is.na(s)]<-""
+  lista<-list("summary"=s,"data"=datos.grupo)
+  return(lista)
+  
+  
+}
+young<-sumarizacion(metadata.copy,"Young")
+kableExtra::kable(young$summary)
 ```
+```{r}
+par(mfrow=c(2,2))
+for(i in 1:ncol(young$data)){
+  
+  if(class(young$data[,i])!="factor"){
+    
+    hist(young$data[,i],main=colnames(young$data)[i],freq=FALSE,xlab="Young n=8")
+    lines(density(young$data[,i]),col="blue")
+    
+  }
+  
+}
+```
+
+```{r}
+par(mfrow=c(2,2))
+for(i in 1:ncol(young$data)){
+  
+  if(class(young$data[,i])!="factor"){
+    
+    boxplot(young$data[,i],main=colnames(young$data)[i],freq=FALSE,xlab="Young n=8")
+    points(mean(young$data[,i]),pch=7)
+
+  }
+  
+}
+```
+
+
+
+```{r}
+old<-sumarizacion(metadata.copy,"Old")
+kableExtra::kable(old$summary)
+```
+
+```{r}
+par(mfrow=c(2,2))
+for(i in 1:ncol(old$data)){
+  
+  if(class(old$data[,i])!="factor"){
+    
+    hist(old$data[,i],main=colnames(old$data)[i],freq=FALSE,xlab="old n=10")
+    lines(density(old$data[,i]),col="blue")
+    
+  }
+  
+}
+```
+```{r}
+par(mfrow=c(2,2))
+for(i in 1:ncol(old$data)){
+  
+  if(class(old$data[,i])!="factor"){
+    
+    boxplot(old$data[,i],main=colnames(old$data)[i],freq=FALSE,xlab="old n=10")
+    points(mean(old$data[,i]),pch=7)
+
+  }
+  
+}
+```
+
+
+```{r}
+ad<-sumarizacion(metadata.copy,"AD")
+kableExtra::kable(ad$summary)
+```
+
+```{r}
+par(mfrow=c(2,2))
+for(i in 1:ncol(ad$data)){
+  
+  if(class(ad$data[,i])!="factor"){
+    
+    hist(ad$data[,i],main=colnames(ad$data)[i],freq=FALSE,xlab="ad n=12")
+    lines(density(ad$data[,i]),col="blue")
+    
+  }
+  
+}
+```
+
+```{r}
+par(mfrow=c(2,2))
+for(i in 1:ncol(ad$data)){
+  
+  if(class(ad$data[,i])!="factor"){
+    
+    boxplot(ad$data[,i],main=colnames(ad$data)[i],freq=FALSE,xlab="ad n=12")
+    points(mean(ad$data[,i]),pch=7)
+
+  }
+  
+}
+```
+
 
 At first sight one can observe that the PMI feature, is some how imbalance, in the way that the mean and the median are not close to each others. For the other numerical variables, it seems that the data follows a normal distribution, given the fact that the mean and the median are close to each other. We have 12 patients with AD, and 18 controls, 10 Old and 8 Young. We have 3 females and 27 males. From the Braak stage, we have I/II in 5 samples. and 12 samples in V/VI stage. From Cerad score, we only have the 12 patients with AD. 
 
-#### Descriptive Plots
 
-Let's look how the data is described.
-```{r generalPlotsCategorical}
-par(mfrow=c(3,2))
-for ( i in 1:dim(metadata.copy)[2]) {
-  if (class(metadata.copy[,i])=="factor"){
-      plot(metadata.copy[,i],main=colnames(metadata.copy)[i])}
-}
-```
-
-```{r generalplotsCont}
-par(mfrow=c(1,2))
-for ( i in 1:dim(metadata.copy)[2]) {
-  if (class(metadata.copy[,i])!="factor"){
-      boxplot(metadata.copy[,i],main=colnames(metadata.copy)[i])
-      points(mean(metadata.copy[,i]),col="blue")
-      hist(metadata.copy[,i],main=colnames(metadata.copy[,i]),freq = F,xlab=colnames(metadata.copy[,i]))
-      lines(density(metadata.copy[,i]),col="blue")
-    
-    }
-}
-```
-
-From the above plots, one can see that we have odd numbers between controls and AD subjects. Also, we have only one female per group. Qualitatively, all the continuous variables do not appear to be  normal distributions. 
-
-Just to observe, if all the continuous features follow normal distributions, between the the controls groups and the AD group or not. 
 
 ```{r plotsContVarvsGroups}
 par(mfrow=c(2,2))
@@ -162,7 +244,7 @@ for( i in 1:length(y)){
 ```
 
 
-#### Analysis betwwen groups and other features
+#### (EXTRA IF NEEDED) Analysis betwwen groups and other features
 
 ```{r testhomogeneityNormality}
 with(metadata.copy,bartlett.test(AgeDeath~Group))
@@ -203,18 +285,8 @@ The integrity numbers of RNA shows a statsitical evidence between AD and Young s
 summary(with(metadata.copy,aov(neuron~Group)))
 pairwise.t.test(metadata.copy$neuron,metadata.copy$Group,method="bonferroni")
 ```
-The percentage of neurons gives us a statistical evidence of change between old-young and AD-young subjects. 
-```{r}
-chisq.test(table(metadata.copy$Gender,metadata.copy$Group))
-chisq.posthoc.test(table(metadata.copy$Braak,metadata.copy$Group))
-chisq.posthoc.test(table(metadata.copy$Cerad,metadata.copy$Group))
-chisq.posthoc.test(table(metadata.copy$CauseDeath,metadata.copy$Group))
 
-```
-Making a chisq test for proportions, one can observe, that obviusly there are significance evidence between female and male subjects ( there is only one female per group). Between groups and Braak stages, there are statstical evidence between AD 
 
-# Question !
-Before going into the exploratory analysis, we have observed that RIN-RNA and neuron \% differs statsitically speaking from controls and AD. For that reason, let's convert those numerical variables into categories. For the integrity of RNA lets add another variable, with low and high integrity of RNA based on their means. And we will do the same for \% neuron. Low percentage and high percentage.
 
 # RNA-seq exploratory analysis
 
@@ -226,7 +298,7 @@ Before going into the exploratory analysis, we have observed that RIN-RNA and ne
 gse.GSE153873<-getGEO("GSE153873",destdir = "data/rnaseqData/",GSEMatrix = T) # RNA-seq
 counts<-read.csv("./data/rnaseqData/GSE153873_summary_count.star.txt",header = T,sep = "\t",row.names="refGene")
 ```
-
+### INVESTIGATION ABOUT THE UNKOWN FEATURE
 First let's investigate which T and A refer, and how they possible lines to metadata. Furthermore lets contrusct this data frame as a "targets" in which will go the pheno data.
 
 ```{r targetsFile}
@@ -244,34 +316,11 @@ title.temp.df.ordered$dontknowLetter<-numeric(length(nrow(title.temp)))
 title.temp.df.ordered$dontknowLetter[w]<-"A"
 title.temp.df.ordered$dontknowLetter[-w]<-"T"
 targets.temp<-cbind(title.temp.df.ordered,metadata.copy)
+targets.temp2<-targets.temp[,-7]
+levels(targets.temp2$Gender)<-c("F","M")
+targets.temp2$shortname<-paste(targets.temp2$Group,targets.temp2$dontknow,targets.temp2$Gender,targets.temp2$Braak,targets.temp2$ID,sep="_")
+targets<-targets.temp2
 ```
-
-
-```{r investigando2}
-targets.temp2<-targets.temp[,-c(3)]
-rownames(targets.temp2)<-targets.temp2$shortname
-targets<-targets.temp2[,-3]
-for ( i in 1:ncol(targets)){
-  
-  if(class(targets[,i])=="character")
-    targets[,i]<-as.factor(targets[,i])
-  
-  
-}
-
-boxplot(targets[,c(3,7,8,11,12)])
-boxplot(targets$dontknowID~targets$dontknowLetter)
-hist(targets$dontknowID)
-wilcox.test(targets$dontknowID~targets$dontknowLetter)
-wilcox.test(targets$dontknowID,targets$PMI)
-wilcox.test(targets$dontknowID,targets$AgeDeath)
-ftable(table(targets$Group,targets$dontknowLetter,targets$Gender,targets$Braak,targets$Cerad))
-```
-A represents females subjects, each of one for each group. From AD female, we have a Cerad socre and Braak stage V/VI. From Old female subject, we have a no Cerad score and I/II Braak stage. Young female has no Braak stages neither Cerad score. 
-
-
-
-Afterwards, we are going to construct a `summarizedExperiment` an object from DESeq. First of all we are going to reorder the samples.
 
 
 
@@ -295,9 +344,8 @@ col.namez.df$shortName<-paste(col.namez.df$Group,col.namez.df$dontknow,col.namez
 col.namez.df$shortName.ordered<-col.namez.df$shortName[order(col.namez.df$ID)]
 counts.order<-counts[,order(col.namez.df$ID)]
 colnames(counts.order)<-col.namez.df$shortName.ordered
-head(counts.order)
+colnames(counts.order)<-targets$shortname
 ```
-# Further anslysis
 
 
 
@@ -316,28 +364,14 @@ for ( i in 1:dim(targets)[2]) {
 
 
 ```
-```{r}
-wilcox.test(targets$dontknowID~targets$dontknowLetter)
-```
-```{r}
-kruskal.test(targets$dontknowID~targets$Group)
-```
-```{r}
-wilcox.test(targets$dontknowID~targets$Gender)
-```
-```{r}
-wilcox.test(targets$dontknowID~targets$Cerad)
-```
-
-```{r}
-kruskal.test(targets$dontknowID~targets$Braak)
-```
 
 
 ```{r investigandoMAsvariableMisteriosaN}
-
-x<-targets[,c(4,5,6,9,10,13,14)]
-y<-apply(x, 2, function(column) table(metadata.copy$Group,column))
+grupo<-table(targets$dontknowLetter,targets$Group)
+genero<-table(targets$dontknowLetter,targets$Gender)
+braak<-table(targets$dontknowLetter,targets$Braak)
+cerad<-table(targets$dontknowLetter,targets$Cerad)
+y<-list("grupo"=grupo,"genero"=genero,"braak"=braak,"cerad"=cerad)
 par(mfrow=c(2,2))
 for( i in 1:length(y)){
   y.t<-y[[i]]
@@ -354,49 +388,116 @@ for( i in 1:length(y)){
   
 }
 ```
-
-
-```{r constructObject}
-dds<-DESeqDataSetFromMatrix(countData = counts.order,colData=targets,design=~dontknowID+dontknowLetter+Group+Gender+PMI+RIN_RNA+neuron)
-
-```
-
-## Pre-filtering the dataset
-
-Here we apply the most minimal filtering rule: removing rows of the `DESeqDataSet` that have no counts, or only a single count across all samples. Additional weighting/filtering to improve power is applied later.
-
-```{r minimalFiltering}
-
-nrow(dds)
-keep<-rowSums(counts(dds)) >1
-dds.filt<-dds[keep,]
-```
-
-Here we filter the counts in such order that the number of samples would be set to the smalles group size, here "Young".
+## RNA-seq data exploration
 
 ```{r}
-keep<-rowSums(counts(dds.filt)>=10)>=8
-dds.filt2<-dds.filt[keep,]
+head(counts.order)
 ```
 
-## The variance stabilizing transformation and the rlog
 
-### rlog vs VST
+As a rule of thumb, genes are dropped if they can’t possibly be expressed in all the samples for any of the conditions. Users can set their own definition of genes being expressed. Usually a gene is required to have a count of 5-10 in a library to be considered expressed in that library. Users should also filter with count-per-million (CPM) rather than filtering on the counts directly, as the latter does not account for differences in library sizes between samples
 
-
-```{r vsd}
-vsd<-vst(dds.filt2,blind=FALSE)
-head(assay(vsd),3)
+First we create an structured list.
+```{r}
+dge <- DGEList(counts=counts.order,group = targets$Group,genes = rownames(counts.order))
 ```
 
-```{r vsd2}
-  colData(vsd)
+```{r}
+dge$samples
 ```
-```{r rld}
-# rld<-rlog(dds.filt2,blind=F)
-# head(assay(rld),3)
+
+### Filter
+
+We filter out lowly expressed genes:
+
+The `filterByExpr` function keeps rows that have worthwhile counts in a minimum of samples, 8 samples in our case. The function access the `group` factor contained in `dge` in order to compute the miimum group size, but the filtering is performed independently of which sample belongs to which group so that no bias is introduced. It is recommended to recalculate the library sizes of the `DGEList` object
+after the filtering, although the downstream analysis is robust to whether this is done or not.
+
+
+```{r}
+keep <- filterByExpr(dge)
+dge_filt<-dge[keep, ,keep.lib.sizes=F]
+dge_filt$samples
 ```
+### Normalization TMM
+
+```{r}
+dge_norm<-calcNormFactors(dge_filt)
+```
+
+```{r}
+ratio<-max(dge_norm$samples$lib.size)/min(dge_norm$samples$lib.size)
+ratio
+```
+
 ```{r}
 
+v<-voom(dge_norm,plot=T)
+```
+```{r}
+boxplot(v$E,cex.axis = 0.5, las = 2, which = "all", col = c(rep("red", 
+  8), rep("blue", 10), rep("green", 12)), main = "Distribution of log counts",names=rownames(v$targets))
+```
+
+### PCA
+
+```{r}
+plotPCA3 <- function (datos, labels, factor, title, scale,center,colores, size = 1.5, glineas = 0.25) {
+  data <- prcomp(t(datos),scale=scale,center=center)
+  # plot adjustments
+  dataDf <- data.frame(data$x)
+  Group <- factor
+  loads <- round(data$sdev^2/sum(data$sdev^2)*100,1)
+  # main plot
+  p1 <- ggplot(dataDf,aes(x=PC1, y=PC2)) +
+    theme_classic() +
+    geom_hline(yintercept = 0, color = "gray70") +
+    geom_vline(xintercept = 0, color = "gray70") +
+    geom_point(aes(color = Group), alpha = 0.55, size = 3) +
+    coord_cartesian(xlim = c(min(data$x[,1])-5,max(data$x[,1])+5)) +
+    scale_fill_discrete(name = "Group")
+  # avoiding labels superposition
+ grafico<- p1 + geom_text_repel(aes(y = PC2 + 0.25, label = labels),segment.size = 0.25, size = size) + 
+    labs(x = c(paste("PC1",loads[1],"%")),y=c(paste("PC2",loads[2],"%"))) +  
+    ggtitle(paste("Principal Component Analysis for: ",title,sep=" "))+ 
+    theme(plot.title = element_text(hjust = 0.5)) +
+    scale_color_manual(values=colores)
+    return(list("loads"=loads,"grafico"=grafico))
+  }
+```
+
+
+```{r}
+loads<-plotPCA3(v$E,labels=rownames(v$targets),factor = v$targets$group,title="PCA normalized data",scale = F,center = T,size=3,colores=1:7)
+loads$grafico
+```
+
+
+
+```{r}
+adj_counts<-ComBat_seq(dge_norm$counts,batch = targets$dontknowLetter,group=targets$Group)
+```
+
+
+
+
+```{r}
+dge_norm.copy<-dge_norm
+dge_norm.copy$counts<-adj_counts
+myvoom<-voom(dge_norm.copy,plot=T)
+```
+
+
+```{r}
+boxplot(myvoom$E,cex.axis = 0.5, las = 2, which = "all", col = c(rep("red", 
+  8), rep("blue", 10), rep("green", 12)), main = "Distribution of log counts",names=rownames(myvoom$targets))
+
+```
+
+
+
+```{r}
+loads<-plotPCA3(myvoom$E,labels=rownames(myvoom$targets),factor = myvoom$targets$group,title="PCA normalized data",scale = F,center = T,size=3,colores=1:7)
+loads$grafico
 ```
 

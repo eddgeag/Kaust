@@ -1,0 +1,1024 @@
+---
+title: "Multi Omic Data explioration"
+author: "Edmond Géraud Aguilar"
+date: '`r format(Sys.Date(),"%e de %B, %Y")`' 
+output:
+  prettydoc::html_pretty:
+    toc: yes
+    theme: cayman
+    highlight: github
+    number_sections: yes
+  html_document:
+    toc: yes
+    toc_depth: '2'
+    df_print: paged
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+    number_sections: yes
+    fig_caption: yes
+    df_print: kable
+    highlight: tango
+    latex_engine: xelatex
+link-citations: yes
+linkcolor: blue
+editor_options:
+  chunk_output_type: inline
+---
+
+
+```{r setup, include=FALSE}
+# knitr options
+knitr::opts_chunk$set(comment = NA, prompt = TRUE, tidy.opts=list(width.cutoff=60),tidy=TRUE, 
+               fig.width = 7, fig.height = 7,echo = TRUE, 
+               message = T, warning =T, cache=T,fig.pos = "!H", out.extra = "")
+```
+
+```{r librerias}
+library(GEOquery)
+library(ggplot2)
+library(limma)
+library(DESeq2)
+library(Rsubread)
+library(data.table)
+library(edgeR)
+library(ggrepel)
+library(sva)
+library(MOFA2)
+library(MOFAdata)
+library(data.table)
+library(BloodCancerMultiOmics2017)
+library(ExperimentHub)
+library(SummarizedExperiment)
+library(CLLmethylation)
+library(minfi)
+library(PCAtools)
+library(survival)
+library(ggfortify)
+library(reshape2)
+library(survival)
+library(ggcorrplot)
+library(VennDiagram)
+library(plotrix)
+library(survminer)
+library(SurvCorr)
+library(tidyverse)
+library(dplyr)
+library(papeR)
+```
+
+
+
+
+# Data
+
+
+Chronic Lymphocytic Leukemia cohort.
+
+measured ex vivo sensitivity of 246 blood cancers to 63 drugs alongside genome, transcriptome, and DNA methylome analysis to understand determinants of drug response. We profiled 246 patient and 3 control samples with 64 drugs.
+
+# Why ? Objective
+
+Insights between DNA mehtylation profiles and expression profiles with CLL patients. Treated and no treated with drugs. There are patients with trysomy 12 and immunoglobulin heavy chain variable gene locvi in chromosome 14.
+
+```{r}
+utils::data("CLL_data")       
+lapply(CLL_data,dim)
+```
+```{r}
+MOFAobject <- create_mofa(CLL_data)
+```
+```{r}
+plot_data_overview(MOFAobject)
+```
+
+
+
+Gender: m (male), f (female)
+Age: age in years
+TTT: time (in years) which passed from taking the sample to the next treatment
+TTD: time (in years) which passed from taking the sample to patients’ death
+treatedAfter: (TRUE/FALSE)
+Died: whether the patient died (TRUE/FALSE)
+
+
+```{r}
+CLL_metadata <- fread("ftp://ftp.ebi.ac.uk/pub/databases/mofa/cll_vignette/sample_metadata.txt")
+```
+# Metadata Analysis
+
+First we eliminate those samples with missing values in the metadata, though MOFA handles missing values
+
+```{r}
+CLL_metadata.copy<-as.data.frame(CLL_metadata)
+rownames(CLL_metadata.copy)<-CLL_metadata.copy$sample
+CLL_metadata.copy<-CLL_metadata.copy[,-1]
+CLL_metadata.copy$Gender<-as.factor(CLL_metadata.copy$Gender)
+CLL_metadata.copy$treatedAfter<-as.factor(CLL_metadata.copy$treatedAfter)
+CLL_metadata.copy$died<-as.factor(CLL_metadata.copy$died)
+CLL_metadata.copy$IGHV<-as.factor(CLL_metadata.copy$IGHV)
+CLL_metadata.copy$trisomy12<-as.factor(CLL_metadata.copy$trisomy12)
+
+levels(CLL_metadata.copy$treatedAfter)<-c("Treat","NoTreat")
+levels(CLL_metadata.copy$died)<-c("L","D") #L live D death
+levels(CLL_metadata.copy$IGHV)<-c("NOmut","mut")
+levels(CLL_metadata.copy$trisomy12)<-c("norm","tri")
+CLL_metadata.copy$sample<-paste(rownames(CLL_metadata.copy),CLL_metadata.copy$Gender,CLL_metadata.copy$treatedAfter,CLL_metadata.copy$died,CLL_metadata.copy$IGHV,CLL_metadata.copy$trisomy12,sep="_")
+discard <- apply(CLL_metadata.copy, 1, function(x) any(is.na(x)))
+CLL_metadata.copy <- CLL_metadata.copy[!discard,]
+head(CLL_metadata.copy)
+```
+
+
+
+```{r}
+str(CLL_metadata.copy)
+```
+
+```{r}
+CLL_metadata.survival<-CLL_metadata.copy
+```
+
+## Descriptive statistics (por hacer)
+
+```{r, echo = FALSE, results = 'asis',message=FALSE,warning=FALSE}
+CLL_metadata.descriptive<-CLL_metadata.survival[,1:8]
+library("knitr")
+library(kableExtra)
+# kable(summarize(CLL_metadata.shared, type = "numeric"))
+# kable(summarize(CLL_metadata.shared, type = "factor", variables = "treatedAfter", cumulative = TRUE))
+kable(summarize(CLL_metadata.descriptive,type="factor",group="treatedAfter",cumulative=T,test=F))
+kable(summarize(CLL_metadata.descriptive, type = c("numeric","factor"), variables=names(CLL_metadata.descriptive),group = "treatedAfter", cumulative = T,test=F))
+# kable(summarize(CLL_metadata.shared, type = "numeric", group = "treatedAfter", test = FALSE))
+```
+
+## Survival Analysis
+```{r}
+CLL_metadata.survival$survivalOutcome<-Surv(time=CLL_metadata.survival$TTD,
+                                     event=CLL_metadata.survival$died=='D')
+
+my.death<-survfit(CLL_metadata.survival$survivalOutcome~1)
+autoplot(my.death, surv.colour='orange', censor.colour='red',
+         main='Kaplan-Meier estimate with 95% confidence bounds\n
+         CLL deaths',
+         xlab='Time (years)')
+
+```
+```{r}
+CLL_metadata.survival$grouping_age <- rep("young",nrow(CLL_metadata.survival))
+CLL_metadata.survival$grouping_age[CLL_metadata.survival$age >=60] <- "old"
+my.fit <- survfit(CLL_metadata.survival$survivalOutcome ~ as.factor(CLL_metadata.survival$grouping_age))
+autoplot(my.fit) + 
+ labs(x = "\n Survival Time (Ages) ", y = "Survival Probabilities in Percentage \n", 
+ title = 'Kaplan-Meier estimate with 95% confidence bounds\n
+         CLL deaths') + 
+ theme(plot.title = element_text(hjust = 0.5), 
+ axis.title.x = element_text(face="bold", colour="#FF7A33", size = 12),
+ axis.title.y = element_text(face="bold", colour="#FF7A33", size = 12),
+ legend.title = element_text(face="bold", size = 10))
+
+```
+
+```{r}
+survdiff(CLL_metadata.survival$survivalOutcome ~ as.factor(CLL_metadata.survival$grouping_age))
+```
+
+We do not observe any differences between yound and old patients with CLL in deaths in survival analysis
+
+Let's perform a survival analysis on the tratment, if they were trated or not, and also the differences between old and young patients.
+```{r}
+CLL_metadata.survival$survivalTreatment<-Surv(time=CLL_metadata.survival$TTT,
+                                     event=CLL_metadata.survival$treatedAfter=='Treat')
+my.treat<-survfit(CLL_metadata.survival$survivalTreatment~1)
+autoplot(my.treat, surv.colour='orange', censor.colour='red',
+         main='Kaplan-Meier estimate with 95% confidence bounds\n
+         CLL Treatment After',
+         xlab='Time (years)')
+
+```
+
+```{r}
+my.fit2 <- survfit(CLL_metadata.survival$survivalTreatment ~ as.factor(CLL_metadata.survival$grouping_age))
+autoplot(my.fit2) + 
+ labs(x = "\n Time To Next Treatment (Ages) ", y = " Probabilities of beeing Treated in Percentage \n", 
+ title = 'Kaplan-Meier estimate with 95% confidence bounds\n
+         CLL deaths') + 
+ theme(plot.title = element_text(hjust = 0.5), 
+ axis.title.x = element_text(face="bold", colour="#FF7A33", size = 12),
+ axis.title.y = element_text(face="bold", colour="#FF7A33", size = 12),
+ legend.title = element_text(face="bold", size = 10))
+
+```
+
+
+```{r}
+survdiff(CLL_metadata.survival$survivalTreatment ~ as.factor(CLL_metadata.survival$grouping_age))
+
+```
+
+
+We do not observe any differences between Kaplan Meier curves for old and young people if they were trated or not
+
+## By gender
+
+
+```{r}
+sumarizacion<-function(datos,columna,grupo){
+  if(columna=="gender"){
+    datos.grupo<-datos[datos$Gender==grupo,]
+    datos.grupo$Gender<-droplevels(datos.grupo$Gender)
+  }else if(columna=="tratamiento"){
+    datos.grupo<-datos[datos$treatedAfter==grupo,]
+    datos.grupo$treatedAfter<-droplevels(datos.grupo$treatedAfter)
+  }else if(columna=="mutacion"){
+    datos.grupo<-datos[datos$IGHV==grupo,]
+    datos.grupo$IGHV<-droplevels(datos.grupo$IGHV)
+    
+  }else if(columna =="trisomia"){
+    datos.grupo<-datos[datos$trisomy12==grupo,]
+    datos.grupo$trisomy12<-droplevels(datos.grupo$trisomy12)
+    
+  }
+  
+  
+  s<-summary(datos.grupo)
+  s[is.na(s)]<-""
+  s<-s[,-c(1,ncol(s)-1,ncol(s))]
+  lista<-list("summary"=s,"data"=datos.grupo)
+  return(lista)
+
+
+}
+female<-sumarizacion(CLL_metadata.copy,"gender","f")
+
+par(mfrow=c(3,2))
+for(i in 1:ncol(female$data)){
+  
+  if(class(female$data[,i])=="numeric"){
+    
+    hist(female$data[,i],main=colnames(female$data)[i],freq=F)
+    lines(density(female$data[,i]),col="blue")
+    boxplot(female$data[,i],main=colnames(female$data)[i])
+    points(mean(female$data[,i]))
+    
+    
+  }
+  
+}
+```
+
+
+```{r}
+male<-sumarizacion(CLL_metadata.copy,"gender","m")
+
+par(mfrow=c(3,2))
+for(i in 1:ncol(male$data)){
+  
+  if(class(male$data[,i])=="numeric"){
+    
+    hist(male$data[,i],main=colnames(male$data)[i],freq=F)
+    lines(density(male$data[,i]),col="blue")
+    boxplot(male$data[,i],main=colnames(male$data)[i])
+    points(mean(male$data[,i]))
+    
+    
+  }
+  
+}
+```
+
+## By treatment
+
+
+```{r}
+treat<-sumarizacion(CLL_metadata.copy,"tratamiento","Treat")
+
+par(mfrow=c(3,2))
+for(i in 1:ncol(treat$data)){
+  
+  if(class(treat$data[,i])=="numeric"){
+    
+    hist(treat$data[,i],main=colnames(treat$data)[i],freq=F)
+    lines(density(treat$data[,i]),col="blue")
+    boxplot(treat$data[,i],main=colnames(treat$data)[i])
+    points(mean(treat$data[,i]))
+    
+    
+  }
+  
+}
+```
+
+
+```{r}
+NOtreat<-sumarizacion(CLL_metadata.copy,"tratamiento","NoTreat")
+
+par(mfrow=c(3,2))
+for(i in 1:ncol(NOtreat$data)){
+  
+  if(class(NOtreat$data[,i])=="numeric"){
+    
+    hist(NOtreat$data[,i],main=colnames(NOtreat$data)[i],freq=F)
+    lines(density(NOtreat$data[,i]),col="blue")
+    boxplot(NOtreat$data[,i],main=colnames(NOtreat$data)[i])
+    points(mean(NOtreat$data[,i]))
+    
+    
+  }
+  
+}
+```
+
+## By trisomy
+
+```{r}
+tri<-sumarizacion(CLL_metadata.copy,"trisomia","tri")
+
+par(mfrow=c(3,2))
+for(i in 1:ncol(tri$data)){
+  
+  if(class(tri$data[,i])=="numeric"){
+    
+    hist(tri$data[,i],main=colnames(tri$data)[i],freq=F)
+    lines(density(tri$data[,i]),col="blue")
+    boxplot(tri$data[,i],main=colnames(tri$data)[i])
+    points(mean(tri$data[,i]))
+    
+    
+  }
+  
+}
+```
+
+```{r}
+no.tri<-sumarizacion(CLL_metadata.copy,"trisomia","norm")
+
+par(mfrow=c(3,2))
+for(i in 1:ncol(no.tri$data)){
+  
+  if(class(no.tri$data[,i])=="numeric"){
+    
+    hist(no.tri$data[,i],main=colnames(no.tri$data)[i],freq=F)
+    lines(density(no.tri$data[,i]),col="blue")
+    boxplot(no.tri$data[,i],main=colnames(no.tri$data)[i])
+    points(mean(no.tri$data[,i]))
+    
+    
+  }
+  
+}
+```
+## By mutation
+```{r}
+mut<-sumarizacion(CLL_metadata.copy,"mutacion","mut")
+
+par(mfrow=c(3,2))
+for(i in 1:ncol(mut$data)){
+  
+  if(class(mut$data[,i])=="numeric"){
+    
+    hist(mut$data[,i],main=colnames(mut$data)[i],freq=F)
+    lines(density(mut$data[,i]),col="blue")
+    boxplot(mut$data[,i],main=colnames(mut$data)[i])
+    points(mean(mut$data[,i]))
+    
+    
+  }
+  
+}
+```
+
+```{r}
+NOmut<-sumarizacion(CLL_metadata.copy,"mutacion","NOmut")
+
+par(mfrow=c(3,2))
+for(i in 1:ncol(NOmut$data)){
+  
+  if(class(NOmut$data[,i])=="numeric"){
+    
+    hist(NOmut$data[,i],main=colnames(NOmut$data)[i],freq=F)
+    lines(density(NOmut$data[,i]),col="blue")
+    boxplot(NOmut$data[,i],main=colnames(NOmut$data)[i])
+    points(mean(NOmut$data[,i]))
+    
+    
+  }
+  
+}
+```
+
+## Comparison Trisomy-NoTrisomy
+
+```{r}
+par(mfrow=c(3,2))
+for(i in 1:ncol(CLL_metadata.copy)){
+  
+  if(class(CLL_metadata.copy[,i])=="numeric"){
+    
+    boxplot(CLL_metadata.copy[,i]~CLL_metadata.copy$trisomy12,main=colnames(CLL_metadata.copy)[i])
+
+    
+  }
+  
+}
+```
+
+```{r}
+par(mfrow=c(3,2))
+for(i in 1:ncol(CLL_metadata.copy)){
+  
+  if(class(CLL_metadata.copy[,i])=="numeric"){
+    
+    boxplot(CLL_metadata.copy[,i]~CLL_metadata.copy$IGHV,main=colnames(CLL_metadata.copy)[i])
+
+    
+  }
+  
+}
+```
+
+
+## Comparison Mutation-No mutation
+
+```{r}
+par(mfrow=c(3,2))
+for(i in 1:ncol(CLL_metadata.copy)){
+  
+  if(class(CLL_metadata.copy[,i])=="numeric"){
+    
+    boxplot(CLL_metadata.copy[,i]~CLL_metadata.copy$treatedAfter,main=colnames(CLL_metadata.copy)[i])
+
+    
+  }
+  
+}
+```
+
+
+
+
+## Comparison Trisomy-Mutation
+```{r}
+grupo<-table(CLL_metadata.copy$IGHV,CLL_metadata.copy$trisomy12)
+y<-list("grupo"=grupo)
+par(mfrow=c(1,1))
+for( i in 1:length(y)){
+  y.t<-y[[i]]
+  barplot(y.t,xlim=c(0,ncol(y.t)+3),
+          col=1:2,
+          ylab="Patients",
+          legend.text=T,
+          args.legend=list(
+            x=ncol(y.t)+3,
+            y=max(colSums(y.t)),
+            bty="n"
+          ))
+  
+  
+}
+```
+
+
+
+## Clinical Association between variables
+
+
+```{r}
+
+perm.test.cor<-function(x,y,num.sim=100,datos=CLL_metadata.survival){
+  
+    test.stat0 <- survcorr(x~1,y~1,data=datos)$rho;  test.stat <- NULL
+    for (i in 1:num.sim)  {
+      
+      test.stat <- c(test.stat, survcorr(x~1,y~1,data=datos)$rho)
+      
+    }
+    p.value <- mean(abs(test.stat)>=abs(test.stat0))
+    return(p.value)
+  
+}
+
+
+
+
+variables<-c("age",
+             "Gender",
+             "IGHV",
+             "trisomy12",
+             "survivalOutcome",
+             "survivalTreatment" )
+
+asociationClinicalVariables<-function(variables,logaritmo){
+  
+  clinical.variables<-CLL_metadata.survival[,variables]
+  
+  pvalues<-matrix(numeric(length = (ncol(clinical.variables))^2),
+                  ncol = ncol(clinical.variables),nrow=ncol(clinical.variables))
+  
+  SO<-Surv(CLL_metadata.copy$TTD,as.numeric(CLL_metadata.copy$died))
+  ST<-Surv(CLL_metadata.copy$TTT,as.numeric(CLL_metadata.copy$treatedAfter))
+
+
+  for(i in 1:ncol(clinical.variables)){
+    
+    for(j in 1:ncol(clinical.variables)){
+      
+      # print(c(i,j))
+      
+      # print(c(names(clinical.variables)[i],names(clinical.variables)[j]))
+
+      if((class(clinical.variables[,i])=="factor") && (class(clinical.variables[,j])=="factor")){
+        
+        
+        ch<-chisq.test(clinical.variables[,i],clinical.variables[,j])
+        if(any(ch$expected<5)){
+          
+          pvalues[i,j]<-fisher.test(clinical.variables[,i],clinical.variables[,j])$p.value
+          
+        }else{
+          
+          pvalues[i,j]<-ch$p.value
+        }
+        
+        
+      }else if((class(clinical.variables[,i])=="factor") && (class(clinical.variables[,j])=="numeric")){
+        
+        pvalues[i,j]<-wilcox.test(clinical.variables[,j]~clinical.variables[,i])$p.value
+        
+      }else if((class(clinical.variables[,i])=="numeric") && (class(clinical.variables[,j])=="factor")){
+        
+        pvalues[i,j]<-wilcox.test(clinical.variables[,i]~clinical.variables[,j])$p.value
+
+      }else if((class(clinical.variables[,i])=="Surv") && (class(clinical.variables[,j])=="numeric") ){
+        pvalues[i,j]<-summary(coxph(clinical.variables[,i]~clinical.variables[,j]))$coefficients[5]
+      }else if((class(clinical.variables[,i])=="numeric") && (class(clinical.variables[,j])=="Surv")){
+        pvalues[i,j]<-summary(coxph(clinical.variables[,j]~clinical.variables[,i]))$coefficients[5]
+        
+      }else if((class(clinical.variables[,i])=="Surv") && (class(clinical.variables[,j])=="factor")){
+        
+
+        pvalues[i,j]<-summary(coxph(clinical.variables[,i]~clinical.variables[,j]))$coefficients[5]
+
+        
+      }else if((class(clinical.variables[,i])=="factor") && (class(clinical.variables[,j])=="Surv")){
+        
+        pvalues[i,j]<-summary(coxph(clinical.variables[,j]~clinical.variables[,i]))$coefficients[5]
+        
+      }else if((class(clinical.variables[,i])=="numeric") && (class(clinical.variables[,j])=="numeric")){
+        pvalues[i,j]<-cor.test(clinical.variables[,i],clinical.variables[,j],method="spearman")$p.value
+      }
+      else if((class(clinical.variables[,i])=="Surv") && (class(clinical.variables[,j])=="Surv")){
+        
+        if((colnames(clinical.variables)[i]==colnames(clinical.variables)[j])){
+          
+          if(colnames(clinical.variables)[i]=="survivalOutcome"){
+            pvalues[i,j]<-perm.test.cor(SO,SO)}else{pvalues[i,j]<-perm.test.cor(SO,SO)}
+          
+          
+          
+          
+        }else{
+          
+          if(colnames(clinical.variables)[i]=="survivalOutcome"){
+            
+            pvalues[i,j]<-perm.test.cor(SO,ST)
+            
+          }else{
+            
+            pvalues[i,j]<-perm.test.cor(ST,SO)
+          }
+          
+        }
+        
+        
+      }
+    }
+  }
+        
+        
+  diag(pvalues)<-1
+  if(logaritmo==T){
+    
+      matriz.df<-as.data.frame((-log10(pvalues)) )
+      colnames(matriz.df)<-colnames(clinical.variables)
+      rownames(matriz.df)<-colnames(clinical.variables)
+      ggcorrplot(matriz.df,lab=T) +scale_fill_gradient2(limit=c(0,5),name="-log10(pvalue)")
+
+
+  }else{
+     
+    matriz.df<-as.data.frame(pvalues)
+     colnames(matriz.df)<-colnames(clinical.variables)
+      rownames(matriz.df)<-colnames(clinical.variables)
+   ggcorrplot(matriz.df,lab=T) +scale_fill_gradient2(limit=c(0,1),name="pvalue")
+
+    
+  }
+  
+  
+  
+  
+}
+
+
+
+
+
+```
+
+
+
+```{r}
+asociationClinicalVariables(variables = variables,logaritmo = T)
+```
+
+
+# Individual omics exploration
+## RNA-seq analysis
+
+Before performing the analysis we must exclude those samples excluded in the metadata analysis, and renaming with the shortName
+```{r}
+mat<-CLL_data$mRNA
+mat<-mat[,order(colnames(mat))]
+mat <- mat[,which(colnames(mat) %in% rownames(CLL_metadata.copy))]
+all(colnames(mat) == rownames(CLL_metadata.copy))
+discard.columns <- apply(mat, 2, function(x) any(is.na(x)))
+mat<-mat[,!discard.columns]
+CLL_metadata.copy.mRNA<-CLL_metadata.copy[!discard.columns,]
+```
+
+
+```{r}
+dge <- DGEList(counts=mat,genes = rownames(mat))
+keep <- filterByExpr(dge)
+dge_filt<-dge[keep, ,keep.lib.sizes=F]
+dge_filt$samples
+dge_norm<-calcNormFactors(dge_filt)
+v<-voom(dge_norm,plot=T)
+```
+
+
+```{r}
+# Prepare data for distribution plot using ggplot
+sampleNames = vector()
+intensities = vector()
+for (i in 1:8){
+  sampleNames = c(sampleNames,rep(colnames(v$E)[i],nrow(v$E)))
+  intensities = c(intensities,v$E[,i])
+}
+
+arrayData <- data.frame(intensities,sampleNames)
+
+g = ggplot(arrayData, aes(intensities, color=sampleNames))
+
+g + geom_density() + 
+  theme(legend.position='none') +
+  labs(title='Gene Expression Density Curve',
+       x='RNA-seq counts',
+       y = 'Density')
+
+```
+
+
+```{r}
+
+boxplot.function<-function(expresion,datos,variable){
+  t<-as.data.frame(table(datos[[variable]]))
+  t$colorNum<-1:dim(t)[1]
+  lista<-NULL
+  for(i in 1:nrow(t)){
+    
+    lista[[i]]<-rep(i,t$Freq[i])
+  
+  
+}
+  colores<-unlist(lista)
+  
+  boxplot(expresion,cex.axis = 0.5, las = 2, which = "all", col =colores, main = "Distribution of log counts",names=rownames(datos))
+
+legend("bottomleft", inset=.02, title=variable,
+   legend=levels(datos[[variable]]), fill=1:length(levels(datos[[variable]])), horiz=F, cex=0.8)
+  
+}
+
+```
+
+
+
+```{r}
+boxplot.function(v$E,CLL_metadata.copy.mRNA,"Gender")
+```
+```{r}
+boxplot.function(v$E,CLL_metadata.copy.mRNA,"treatedAfter")
+
+```
+
+```{r}
+boxplot.function(v$E,CLL_metadata.copy.mRNA,"died")
+
+```
+
+```{r}
+boxplot.function(v$E,CLL_metadata.copy.mRNA,"IGHV")
+
+```
+
+```{r}
+boxplot.function(v$E,CLL_metadata.copy.mRNA,"trisomy12")
+
+```
+
+```{r}
+pca_rna<-prcomp(t(v$E),center=T,scale=F)
+
+plot.pca.variance<-function(pca_type,tipo){
+  
+
+var_prcomp <- pca_type$sdev^2
+
+# Plot PCs variance
+pcvar <- data.frame(var=var_prcomp/sum(var_prcomp)*100, 
+                    pc=c(1:length(var_prcomp)))
+
+ggplot(pcvar, aes(x = pc)) + geom_line(aes(y=var)) + 
+  labs(x='Principal Component', y='Explained Variance') + 
+  geom_point(aes(y=var)) + 
+  ggtitle(paste0(tipo," Principal Components variance"))
+  
+}
+
+```
+
+```{r}
+plot.pca.variance(pca_rna,"RNA")
+```
+
+
+
+
+
+```{r}
+plotPCA3 <- function (pca_type, labels, factor, title, size = 1.5, glineas = 0.25) {
+  if(missing(labels)){
+    labels.T=F
+  }else{
+    lables.T=T
+  }
+  data <- pca_type
+  # plot adjustments
+  dataDf <- data.frame(data$x)
+  Group <- factor
+  loads <- round(data$sdev^2/sum(data$sdev^2)*100,2)
+  colores<-1:length(levels(Group))
+  # main plot
+  p1 <- ggplot(dataDf,aes(x=PC1, y=PC2)) +
+    theme_classic() +
+    geom_hline(yintercept = 0, color = "gray70") +
+    geom_vline(xintercept = 0, color = "gray70") +
+    geom_point(aes(color = Group), alpha = 0.55, size = 3) +
+    coord_cartesian(xlim = c(min(data$x[,1])-5,max(data$x[,1])+5)) +
+    scale_fill_discrete(name = "Group")
+  # avoiding labels superposition
+  if(labels.T==T){
+     grafico<- p1 + geom_text_repel(aes(y = PC2 + 0.25, label = labels),segment.size = 0.25, size = size) + 
+    labs(x = c(paste("PC1",loads[1],"%")),y=c(paste("PC2",loads[2],"%"))) +  
+    ggtitle(paste("Principal Component Analysis for: ",title,sep=" "))+ 
+    theme(plot.title = element_text(hjust = 0.5)) +
+    scale_color_manual(values=colores)
+  }else if (labels.T==F){
+     grafico<- p1  + 
+    labs(x = c(paste("PC1",loads[1],"%")),y=c(paste("PC2",loads[2],"%"))) +  
+    ggtitle(paste("Principal Component Analysis for: ",title,sep=" "))+ 
+    theme(plot.title = element_text(hjust = 0.5)) +
+    scale_color_manual(values=colores)
+  }
+    
+    return(grafico)
+    
+  }
+```
+
+
+
+```{r}
+plotPCA3(pca_rna,factor = CLL_metadata.copy.mRNA$Gender,title = "RNA")
+```
+
+```{r}
+plotPCA3(pca_rna,factor = CLL_metadata.copy.mRNA$treatedAfter,title = "RNA")
+
+```
+
+```{r}
+plotPCA3(pca_rna,factor = CLL_metadata.copy.mRNA$died,title = "RNA")
+
+```
+
+```{r}
+plotPCA3(pca_rna,factor = CLL_metadata.copy.mRNA$IGHV,title = "RNA")
+
+```
+```{r}
+plotPCA3(pca_rna,factor = CLL_metadata.copy.mRNA$trisomy12,title = "RNA")
+
+```
+
+```{r}
+variables<-c("age",
+             "Gender",
+             "IGHV",
+             "trisomy12",
+             "treatedAfter",
+             "died",
+             "TTT",
+             "TTD",
+             "survivalOutcome",
+             "survivalTreatment" )
+pcaCorrelation<-function(pca_type,expresion,variables,pca_num){
+
+    clinical.variables<-CLL_metadata.survival[,variables]
+    clinical.variables.type<-clinical.variables[colnames(expresion),]
+    loads<-pca_type$x
+
+    pvalues_type<-matrix(0,ncol=pca_num,nrow=ncol(clinical.variables.type))
+    for(j in 1:pca_num){
+      
+      
+      for(k in 1:ncol(clinical.variables.type)){
+
+        if(class(clinical.variables.type[,k])=="factor"){
+          
+          pvalues_type[k,j]<-wilcox.test(loads[,j]~clinical.variables.type[,k])$p.value
+          
+        }else if(class(clinical.variables.type[,k])=="numeric"){
+          pvalues_type[k,j]<-cor.test(loads[,j],clinical.variables.type[,k],method="spearman")$p.value
+        }else if(class(clinical.variables.type[,k])=="Surv"){
+          
+          s<-summary(coxph(formula = clinical.variables.type$survivalOutcome~loads[,j]))
+          pvalues_type[k,j]<-s$coefficients[,5]
+        }
+        
+        
+      }
+      
+      
+      
+    }
+  
+    pvalues_type<-as.data.frame(pvalues_type)
+    rownames(pvalues_type)<-colnames(clinical.variables)
+    colnames(pvalues_type)<-colnames(loads)[1:pca_num]
+  return(pvalues_type)
+}
+
+
+
+plotPCAcorrelation<-function(matriz,logtype,pcaNumber){
+  
+  if(logtype==T){
+    
+    matriz.df<-as.data.frame((-log10(matriz[,1:pcaNumber])) )
+    ggcorrplot(t(matriz.df),lab=T) +scale_fill_gradient2(limit=c(0,10),name="-log10(pvalue)")
+    
+  }else{
+    matriz.df<-as.data.frame(matriz[,1:pcaNumber])
+    ggcorrplot(t(matriz.df),lab=T)+scale_fill_gradient2(limit=c(0,1),name="pvalue")
+    
+  }
+  
+  
+}
+```
+
+
+
+
+```{r}
+matriz_pvalores<-pcaCorrelation(pca_rna,v$E,variables,pca_num = 10)
+plotPCAcorrelation(matriz_pvalores,logtype =T,pcaNumber = 10)
+```
+
+
+
+
+
+## DNAm
+```{r}
+mat.met<-CLL_data$Methy
+mat.met<-mat.met[,order(colnames(mat.met))]
+mat.met <- mat.met[,which(colnames(mat.met) %in% rownames(CLL_metadata.copy))]
+all(colnames(mat.met) == rownames(CLL_metadata.copy))
+discard.columns <- apply(mat.met, 2, function(x) any(is.na(x)))
+mat.met<-mat.met[,!discard.columns]
+CLL_metadata.copy.DNAm<-CLL_metadata.copy[!discard.columns,]
+```
+
+
+
+```{r}
+densityPlot(mat.met,xlab="M")
+```
+
+```{r}
+boxplot.function(expresion = mat.met,datos =CLL_metadata.copy.DNAm,variable = "Gender" )
+```
+
+
+
+```{r}
+boxplot.function(expresion = mat.met,datos =CLL_metadata.copy.DNAm,variable = "treatedAfter" )
+```
+
+
+```{r}
+boxplot.function(expresion = mat.met,datos =CLL_metadata.copy.DNAm,variable = "died" )
+```
+
+```{r}
+boxplot.function(expresion = mat.met,datos =CLL_metadata.copy.DNAm,variable = "IGHV" )
+```
+
+```{r}
+boxplot.function(expresion = mat.met,datos =CLL_metadata.copy.DNAm,variable = "trisomy12" )
+```
+
+```{r}
+pca_dnam<-prcomp(t(mat.met),center=T,scale=F)
+
+
+```
+
+```{r}
+plot.pca.variance(pca_rna,"DNA-methylation")
+```
+
+
+
+```{r}
+plotPCA3(pca_dnam,factor = CLL_metadata.copy.DNAm$Gender,title = "DNA-methylation")
+
+```
+
+
+```{r}
+plotPCA3(pca_dnam,factor = CLL_metadata.copy.DNAm$treatedAfter,title = "DNA-methylation")
+
+```
+
+```{r}
+plotPCA3(pca_dnam,factor = CLL_metadata.copy.DNAm$IGHV,title = "DNA-methylation")
+
+```
+
+```{r}
+plotPCA3(pca_dnam,factor = CLL_metadata.copy.DNAm$died,title = "DNA-methylation")
+
+```
+```{r}
+plotPCA3(pca_dnam,factor = CLL_metadata.copy.DNAm$trisomy12,title = "DNA-methylation")
+
+```
+
+
+
+```{r}
+
+matriz_pvalores<-pcaCorrelation(pca_dnam,mat.met,variables,pca_num = 10)
+plotPCAcorrelation(matriz_pvalores,logtype =T,pcaNumber = 10)
+```
+
+```{r}
+# Venn Diagram
+m <- list(rna=colnames(v$E), 
+          met=colnames(mat.met))
+        
+
+vennPlot <- venn.diagram(m, NULL, fill=c('red','blue'), 
+                         cat.fontface=4, lty=2, cex=1.2, cat.cex=1.2)
+grid.newpage()
+grid.draw(vennPlot)
+```
+
+
+```{r}
+shared<-colnames(mat.met)[colnames(mat.met) %in% colnames(v$E)]
+```
+
+## Descriptive statistics of shared components.
+
+
+
+
+```{r, echo = FALSE, results = 'asis',message=FALSE,warning=FALSE}
+CLL_metadata.shared<-CLL_metadata.survival[shared,1:8]
+library("knitr")
+library(kableExtra)
+# kable(summarize(CLL_metadata.shared, type = "numeric"))
+# kable(summarize(CLL_metadata.shared, type = "factor", variables = "treatedAfter", cumulative = TRUE))
+kable(summarize(CLL_metadata.shared,type="factor",group="treatedAfter",cumulative=T,test=F))
+kable(summarize(CLL_metadata.shared, type = c("numeric","factor"), variables=names(CLL_metadata.shared),group = "treatedAfter", cumulative = T,test=F))
+# kable(summarize(CLL_metadata.shared, type = "numeric", group = "treatedAfter", test = FALSE))
+```
+
+
+

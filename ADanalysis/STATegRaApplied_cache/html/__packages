@@ -15,3 +15,11 @@ MatrixGenerics
 SummarizedExperiment
 DESeq2
 Rsubread
+data.table
+edgeR
+ggrepel
+nlme
+mgcv
+genefilter
+BiocParallel
+sva

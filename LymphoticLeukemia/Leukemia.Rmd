@@ -63,8 +63,12 @@ library(plotrix)
 library(survminer)
 library(SurvCorr)
 library(tidyverse)
-library(dplyr)
-library(papeR)
+# library(papeR)
+library(STATegRa)
+library(MASS)
+library(gridExtra)
+
+
 ```
 
 
@@ -90,6 +94,7 @@ MOFAobject <- create_mofa(CLL_data)
 ```
 ```{r}
 plot_data_overview(MOFAobject)
+
 ```
 
 
@@ -118,12 +123,9 @@ CLL_metadata.copy$treatedAfter<-as.factor(CLL_metadata.copy$treatedAfter)
 CLL_metadata.copy$died<-as.factor(CLL_metadata.copy$died)
 CLL_metadata.copy$IGHV<-as.factor(CLL_metadata.copy$IGHV)
 CLL_metadata.copy$trisomy12<-as.factor(CLL_metadata.copy$trisomy12)
+levels(CLL_metadata.copy$IGHV)<-c(F,T)
+levels(CLL_metadata.copy$trisomy12)<-c(F,T)
 
-levels(CLL_metadata.copy$treatedAfter)<-c("Treat","NoTreat")
-levels(CLL_metadata.copy$died)<-c("L","D") #L live D death
-levels(CLL_metadata.copy$IGHV)<-c("NOmut","mut")
-levels(CLL_metadata.copy$trisomy12)<-c("norm","tri")
-CLL_metadata.copy$sample<-paste(rownames(CLL_metadata.copy),CLL_metadata.copy$Gender,CLL_metadata.copy$treatedAfter,CLL_metadata.copy$died,CLL_metadata.copy$IGHV,CLL_metadata.copy$trisomy12,sep="_")
 discard <- apply(CLL_metadata.copy, 1, function(x) any(is.na(x)))
 CLL_metadata.copy <- CLL_metadata.copy[!discard,]
 head(CLL_metadata.copy)
@@ -142,20 +144,36 @@ CLL_metadata.survival<-CLL_metadata.copy
 ## Descriptive statistics (por hacer)
 
 ```{r, echo = FALSE, results = 'asis',message=FALSE,warning=FALSE}
-CLL_metadata.descriptive<-CLL_metadata.survival[,1:8]
+library(papeR)
+CLL_metadata.descriptive<-CLL_metadata.survival
 library("knitr")
 library(kableExtra)
 # kable(summarize(CLL_metadata.shared, type = "numeric"))
 # kable(summarize(CLL_metadata.shared, type = "factor", variables = "treatedAfter", cumulative = TRUE))
-kable(summarize(CLL_metadata.descriptive,type="factor",group="treatedAfter",cumulative=T,test=F))
-kable(summarize(CLL_metadata.descriptive, type = c("numeric","factor"), variables=names(CLL_metadata.descriptive),group = "treatedAfter", cumulative = T,test=F))
+s1<-summarize(CLL_metadata.descriptive,type="factor",group="treatedAfter",cumulative=F,test=F)
+s2<-summarize(CLL_metadata.descriptive, type = c("numeric"), variables=names(CLL_metadata.descriptive),group = "treatedAfter", cumulative = F,test=F)
+colsnames<-colnames(s1)
+colnames(s1)<-c(" " ," ","No Treatment"," "," ","Treatment"," "," ")
+micolumna<-data.frame(" "=colsnames[1],
+                      " "=colsnames[2],
+                      "No Treatment" = colsnames[3],
+                      " "= colsnames[4],
+                      " " = colsnames[5],
+                      "Treatment" = colsnames[6],
+                      " "=colsnames[7],
+                      " "=colsnames[8])
+kableExtra::kable(as.data.frame(rbind(colsnames,s1)))
+                      
+kableExtra::kable(s2)
 # kable(summarize(CLL_metadata.shared, type = "numeric", group = "treatedAfter", test = FALSE))
 ```
+
+Regarding the TTT and TTD, are two variables that measure time, since the extraction of the sample untill next tratment, and TTD is the time to death since the sample was taken. Thus, that's why, when there is no treatment, both values are the same.
 
 ## Survival Analysis
 ```{r}
 CLL_metadata.survival$survivalOutcome<-Surv(time=CLL_metadata.survival$TTD,
-                                     event=CLL_metadata.survival$died=='D')
+                                     event=CLL_metadata.survival$died==F)
 
 my.death<-survfit(CLL_metadata.survival$survivalOutcome~1)
 autoplot(my.death, surv.colour='orange', censor.colour='red',
@@ -188,7 +206,7 @@ We do not observe any differences between yound and old patients with CLL in dea
 Let's perform a survival analysis on the tratment, if they were trated or not, and also the differences between old and young patients.
 ```{r}
 CLL_metadata.survival$survivalTreatment<-Surv(time=CLL_metadata.survival$TTT,
-                                     event=CLL_metadata.survival$treatedAfter=='Treat')
+                                     event=CLL_metadata.survival$treatedAfter==F)
 my.treat<-survfit(CLL_metadata.survival$survivalTreatment~1)
 autoplot(my.treat, surv.colour='orange', censor.colour='red',
          main='Kaplan-Meier estimate with 95% confidence bounds\n
@@ -219,6 +237,9 @@ survdiff(CLL_metadata.survival$survivalTreatment ~ as.factor(CLL_metadata.surviv
 
 We do not observe any differences between Kaplan Meier curves for old and young people if they were trated or not
 
+It is odd that when we plot the Kaplan Meier curves, when the event equals to death, the kapplan meier, de dots, are the people alive. The same thing, it's like it takes the opposite argument.
+
+`
 ## By gender
 
 
@@ -291,7 +312,7 @@ for(i in 1:ncol(male$data)){
 
 
 ```{r}
-treat<-sumarizacion(CLL_metadata.copy,"tratamiento","Treat")
+treat<-sumarizacion(CLL_metadata.copy,"tratamiento",T)
 
 par(mfrow=c(3,2))
 for(i in 1:ncol(treat$data)){
@@ -311,7 +332,7 @@ for(i in 1:ncol(treat$data)){
 
 
 ```{r}
-NOtreat<-sumarizacion(CLL_metadata.copy,"tratamiento","NoTreat")
+NOtreat<-sumarizacion(CLL_metadata.copy,"tratamiento",F)
 
 par(mfrow=c(3,2))
 for(i in 1:ncol(NOtreat$data)){
@@ -329,10 +350,12 @@ for(i in 1:ncol(NOtreat$data)){
 }
 ```
 
+There is no difference between TTT and TTD when there is no tratment, because its the same time.
+
 ## By trisomy
 
 ```{r}
-tri<-sumarizacion(CLL_metadata.copy,"trisomia","tri")
+tri<-sumarizacion(CLL_metadata.copy,"trisomia",T)
 
 par(mfrow=c(3,2))
 for(i in 1:ncol(tri$data)){
@@ -351,7 +374,7 @@ for(i in 1:ncol(tri$data)){
 ```
 
 ```{r}
-no.tri<-sumarizacion(CLL_metadata.copy,"trisomia","norm")
+no.tri<-sumarizacion(CLL_metadata.copy,"trisomia",F)
 
 par(mfrow=c(3,2))
 for(i in 1:ncol(no.tri$data)){
@@ -370,7 +393,7 @@ for(i in 1:ncol(no.tri$data)){
 ```
 ## By mutation
 ```{r}
-mut<-sumarizacion(CLL_metadata.copy,"mutacion","mut")
+mut<-sumarizacion(CLL_metadata.copy,"mutacion",T)
 
 par(mfrow=c(3,2))
 for(i in 1:ncol(mut$data)){
@@ -389,7 +412,7 @@ for(i in 1:ncol(mut$data)){
 ```
 
 ```{r}
-NOmut<-sumarizacion(CLL_metadata.copy,"mutacion","NOmut")
+NOmut<-sumarizacion(CLL_metadata.copy,"mutacion",F)
 
 par(mfrow=c(3,2))
 for(i in 1:ncol(NOmut$data)){
@@ -505,6 +528,8 @@ variables<-c("age",
              "Gender",
              "IGHV",
              "trisomy12",
+             "died",
+             "treatedAfter",
              "survivalOutcome",
              "survivalTreatment" )
 
@@ -556,13 +581,73 @@ asociationClinicalVariables<-function(variables,logaritmo){
         
       }else if((class(clinical.variables[,i])=="Surv") && (class(clinical.variables[,j])=="factor")){
         
+        if(colnames(clinical.variables)[i]=="survivalTreatment"){
+          
+          if(colnames(clinical.variables)[j]=="died"){
+            
+            pvalues[i,j]<-NA
+            
+          }else if(colnames(clinical.variables)[j]=="treatedAfter"){ 
+            pvalues[i,j]<-NA
+          }else{
+            pvalues[i,j]<-summary(coxph(clinical.variables[,i]~clinical.variables[,j]))$coefficients[5]
 
-        pvalues[i,j]<-summary(coxph(clinical.variables[,i]~clinical.variables[,j]))$coefficients[5]
+          }
+          
+        }else{
+          
+          if(colnames(clinical.variables)[i]=="survivalOutcome"){
+            
+            if(colnames(clinical.variables)[j]=="died"){
+              
+              pvalues[i,j]<-NA
+            }else{
+            pvalues[i,j]<-summary(coxph(clinical.variables[,i]~clinical.variables[,j]))$coefficients[5]
+
+            }
+            
+            
+          }
+          
+          
+        }
+  
 
         
       }else if((class(clinical.variables[,i])=="factor") && (class(clinical.variables[,j])=="Surv")){
         
-        pvalues[i,j]<-summary(coxph(clinical.variables[,j]~clinical.variables[,i]))$coefficients[5]
+       if(colnames(clinical.variables)[j]=="survivalTreatment"){
+          
+          if(colnames(clinical.variables)[i]=="died"){
+            
+            pvalues[i,j]<-NA
+            
+          }else if(colnames(clinical.variables)[i]=="treatedAfter"){ 
+            pvalues[i,j]<-NA
+          }else{
+            pvalues[i,j]<-summary(coxph(clinical.variables[,j]~clinical.variables[,i]))$coefficients[5]
+
+          }
+          
+        }else{
+          
+          if(colnames(clinical.variables)[j]=="survivalOutcome"){
+            
+            if(colnames(clinical.variables)[i]=="died"){
+              
+              pvalues[i,j]<-NA
+            }else{
+            pvalues[i,j]<-summary(coxph(clinical.variables[,j]~clinical.variables[,i]))$coefficients[5]
+
+            }
+            
+            
+          }
+          
+          
+        }
+  
+
         
       }else if((class(clinical.variables[,i])=="numeric") && (class(clinical.variables[,j])=="numeric")){
         pvalues[i,j]<-cor.test(clinical.variables[,i],clinical.variables[,j],method="spearman")$p.value
@@ -916,7 +1001,7 @@ CLL_metadata.copy.DNAm<-CLL_metadata.copy[!discard.columns,]
 
 
 ```{r}
-densityPlot(mat.met,xlab="M")
+minfi::densityPlot(mat.met,xlab="M")
 ```
 
 ```{r}
@@ -1008,17 +1093,144 @@ shared<-colnames(mat.met)[colnames(mat.met) %in% colnames(v$E)]
 
 
 
+```{r}
+s1<-summarize(CLL_metadata.descriptive,type="factor",group="treatedAfter",cumulative=F,test=F)
+s2<-summarize(CLL_metadata.descriptive, type = c("numeric"), variables=names(CLL_metadata.descriptive),group = "treatedAfter", cumulative = F,test=F)
+colsnames<-colnames(s1)
+colnames(s1)<-c(" " ," ","No Treatment"," "," ","Treatment"," "," ")
+micolumna<-data.frame(" "=colsnames[1],
+                      " "=colsnames[2],
+                      "No Treatment" = colsnames[3],
+                      " "= colsnames[4],
+                      " " = colsnames[5],
+                      "Treatment" = colsnames[6],
+                      " "=colsnames[7],
+                      " "=colsnames[8])
+kableExtra::kable(as.data.frame(rbind(colsnames,s1)))
+```
 
 ```{r, echo = FALSE, results = 'asis',message=FALSE,warning=FALSE}
 CLL_metadata.shared<-CLL_metadata.survival[shared,1:8]
 library("knitr")
 library(kableExtra)
-# kable(summarize(CLL_metadata.shared, type = "numeric"))
-# kable(summarize(CLL_metadata.shared, type = "factor", variables = "treatedAfter", cumulative = TRUE))
-kable(summarize(CLL_metadata.shared,type="factor",group="treatedAfter",cumulative=T,test=F))
-kable(summarize(CLL_metadata.shared, type = c("numeric","factor"), variables=names(CLL_metadata.shared),group = "treatedAfter", cumulative = T,test=F))
+
+s1<-summarize(CLL_metadata.shared,type="factor",group="treatedAfter",cumulative=F,test=F)
+colsnames<-colnames(s1)
+colnames(s1)<-c(" " ," ","No Treatment"," "," ","Treatment"," "," ")
+micolumna<-data.frame(" "=colsnames[1],
+                      " "=colsnames[2],
+                      "No Treatment" = colsnames[3],
+                      " "= colsnames[4],
+                      " " = colsnames[5],
+                      "Treatment" = colsnames[6],
+                      " "=colsnames[7],
+                      " "=colsnames[8])
+kableExtra::kable(as.data.frame(rbind(colsnames,s1)))
+kable(summarize(CLL_metadata.shared, type = c("numeric","factor"), variables=names(CLL_metadata.shared),group = "treatedAfter", cumulative = F,test=F))
 # kable(summarize(CLL_metadata.shared, type = "numeric", group = "treatedAfter", test = FALSE))
 ```
 
 
+# OmicsPCA exploration
+
+
+Before start the multi-omic approach, mean centred of each feature and the data set normalization to unit sum of squares (forbenious normalization) is recommended to make more comparabable the different omics data-sets.
+
+```{r}
+#Calculate Forbenious normalization
+frobenius_rna <- norm(as.matrix(v$E), type="F")
+frobenius_met <- norm(as.matrix(mat.met), type="F")
+
+#Mean-centring and division by Frobenius normalization factor
+rna_norm <- t(scale(t(v$E), scale=FALSE))/frobenius_rna
+met_norm <- t(scale(t(mat.met), scale=FALSE))/frobenius_met
+
+##Mean-centring without Frobenius normalization
+rna_norm2 <- t(scale(t(v$E), scale=FALSE))
+met_norm2 <- t(scale(t(mat.met), scale=FALSE))
+```
+
+Then, we need to keep the common samples between the different data-types.
+
+```{r}
+ids_rna_met <- intersect(colnames(v$E), colnames(mat.met))
+length(ids_rna_met)
+```
+
+## Model selection
+
+Now, we are ready to explore if there are share components between data-types.
+
+The first step is to determine the number of share/common and individual components between omics.
+
+How to determine these numbers is still an open question nowadays, so the user can explore different methods like jive, pca-gca and pESCA, between others. Following, we show how to perform the model selection based on these three methods.
+
+```{r}
+library(r.jive)
+
+# Data <- list(mRNA=v$E[,ids_rna_met],
+#               met=mat.met[,ids_rna_met])
+# rjive_rna_met <- jive(Data, scale = FALSE, center = FALSE)
+load(file="./results/rjiveData.RData")
+```
+
+```{r}
+showVarExplained(rjive_rna_met) 
+```
+
+
+
+
+
+```{r}
+sharedComponets<-function(result,n_joint){
+  
+   PCs = matrix(nrow = n_joint, ncol = dim(result$data[[1]])[2])
+   SVD = svd(do.call(rbind, result$joint), nu = n_joint, 
+      nv = n_joint)
+    PCs[1:n_joint, ] = diag(SVD$d)[1:n_joint, 1:n_joint] %*% 
+      t(SVD$v[, 1:n_joint])
+    # PC_names[1:n_joint] = paste("Joint ", 1:n_joint)
+    return(PCs)
+
+  
+  
+}
+individualComponents<-function(result,n_indiv){
+    
+   PCs_2 = matrix(nrow = n_indiv, ncol = dim(result$data[[1]])[2])
+   PCs_1 = matrix(nrow = n_indiv, ncol = dim(result$data[[1]])[2])
+   SVD_1 = svd(result$individual[[1]], nu = n_indiv, 
+      nv = n_indiv)
+   SVD_2 = svd(result$individual[[2]], nu = n_indiv, 
+      nv = n_indiv)
+   
+   PCs_1[1:n_indiv,] = diag(SVD_1$d)[1:n_indiv,1:n_indiv] %*% 
+     t(SVD_1$v[,1:n_indiv])
+   PCs_2[1:n_indiv,] = diag(SVD_2$d)[1:n_indiv,1:n_indiv] %*% 
+     t(SVD_2$v[,1:n_indiv])
+
+    # PC_names[1:n_joint] = paste("Joint ", 1:n_joint)
+    lista<-list(rna=PCs_1,dnamet = PCs_2)
+    return(lista)
+  
+  
+  
+}
+```
+
+```{r}
+shared<-sharedComponets(rjive_rna_met,101)
+individual<-individualComponents(rjive_rna_met,101)
+```
+
+```{r}
+individual$rna[1,]-individual$dnamet[1,]
+```
+
+
+```{r}
+colores<-as.numeric(CLL_metadata.shared$IGHV)
+showPCA(rjive_rna_met,n_joint=2,Colors=colores,n_indiv=c(1,1))
+```
 
